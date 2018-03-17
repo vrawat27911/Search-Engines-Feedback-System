@@ -1,0 +1,297 @@
+﻿using EyeTribe.ClientSdk;
+using EyeTribe.ClientSdk.Data;
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
+using System.Windows.Forms;
+
+namespace SearchingGoogle
+{
+    public partial class SearchWin : Form, IGazeListener
+    {
+        private float m_SmoothedX;
+        private float m_SmoothedY;
+        private float m_RawX;
+        private float m_RawY;
+        private int screenX;
+        private int screenY;
+
+        // If Eye Tracker is On
+        bool trackerOn = false;
+
+        //Seach Tracking 
+        bool trackingActive = false;
+
+        //Storing the Template Data
+        CsvRow mTemplateData = null;
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            if (this.WindowState == FormWindowState.Normal || this.WindowState == FormWindowState.Minimized)
+            {
+                this.WindowState = FormWindowState.Maximized;
+            }
+        }
+        
+        private void keyPressed(Object sender, System.Windows.Forms.KeyEventArgs e)
+        {
+            if (e.Shift)
+            {
+                if (!trackerOn)
+                    startTracking();
+                else
+                    stopEyeTracking();
+            }
+            if (e.Control)
+            {
+                trackingActive = true;
+            }
+
+            if (e.Alt)
+            {
+                trackingActive = false;
+            }
+
+            if (e.KeyData == Keys.Escape)
+            {
+                Environment.Exit(0);
+            }
+        }
+
+        private void startTracking()
+        {
+            if (!trackerOn)
+            {
+                // Connect client
+                GazeManager.Instance.Activate(GazeManager.ApiVersion.VERSION_1_0, GazeManager.ClientMode.Push);
+
+                // Register this class for events
+                GazeManager.Instance.AddGazeListener(this);
+                trackerOn = true;
+            }
+        }
+
+        private void writeGazeData()
+        {
+            // Record gaze data as candidate path
+            if (trackerOn && trackingActive)
+            {
+                //Console.WriteLine("X = {0} and Y = {1} and tracking = {2}", m_RawX, m_RawY);
+                mTemplateData.Add(screenX.ToString());
+                mTemplateData.Add(screenY.ToString());
+                mTemplateData.Add(m_RawX.ToString());
+                mTemplateData.Add(m_RawY.ToString());
+                mTemplateData.Add(m_SmoothedX.ToString());
+                mTemplateData.Add(m_SmoothedY.ToString());
+
+                mTemplateData.Add(DateTime.UtcNow.ToString(DateTime.UtcNow.ToString("hh:mm:ss:fff")));
+
+                FileWriter.writeData(mTemplateData);
+                mTemplateData.Clear();
+            }
+        }
+
+        public void OnGazeUpdate(GazeData gazeData)
+        {
+            bool Smooth = true;
+
+            var x = this.Bounds.X;
+            var y = this.Bounds.Y;
+
+            var gX = Smooth ? gazeData.SmoothedCoordinates.X : gazeData.RawCoordinates.X;
+            var gY = Smooth ? gazeData.SmoothedCoordinates.Y : gazeData.RawCoordinates.Y;
+            screenX = (int)Math.Round(x + gX, 0);
+            screenY = (int)Math.Round(y + gY, 0);
+
+            m_RawX = gazeData.RawCoordinates.X;
+            m_RawY = gazeData.RawCoordinates.Y;
+
+            m_SmoothedX = gazeData.SmoothedCoordinates.X;
+            m_SmoothedY = gazeData.SmoothedCoordinates.Y;
+
+            // return in case of 0,0 
+            if (screenX == 0 && screenY == 0) return;
+
+            // Write the Updated gaze Data
+            writeGazeData();
+
+            Win32.SetCursorPos((int)m_SmoothedX, (int)m_SmoothedY);
+        }
+
+        public void stopEyeTracking()
+        {
+            if (trackerOn)
+            {
+                GazeManager.Instance.RemoveGazeListener(this);
+                Console.WriteLine("*DISCONNECTING CONNECTION");
+                GazeManager.Instance.Deactivate();
+                trackerOn = false;
+            }
+        }
+
+        public static void createDirectory(string path)
+        {
+            // string path = @"c:\MyDir";
+
+            try
+            {
+                // Determine whether the directory exists.
+                if (Directory.Exists(path))
+                {
+                    Console.WriteLine("That path exists already.");
+                    return;
+                }
+
+                // Try to create the directory.
+                DirectoryInfo di = Directory.CreateDirectory(path);
+                Console.WriteLine("The directory was created successfully at {0}.", Directory.GetCreationTime(path));
+
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("The process failed: {0}", e.ToString());
+            }
+        }
+
+        public void CreateCSVFile(int userId)
+        {
+            string directryPath = @"..\..\Data\UserStudy\P_" + userId.ToString();
+            createDirectory(directryPath);
+            string filePath = directryPath + "\\";
+            string fileName;
+            fileName = filePath + ".csv";
+
+            FileWriter.CreateCSVFile(fileName);
+            mTemplateData.Add("X");
+            mTemplateData.Add("Y");
+            mTemplateData.Add("Time");
+            FileWriter.writeData(mTemplateData);
+            mTemplateData.Clear();
+        }
+
+        public SearchWin()
+        {
+            InitializeComponent();
+            mTemplateData = new CsvRow();
+            this.KeyPreview = true;
+            this.KeyDown += new System.Windows.Forms.KeyEventHandler(keyPressed);
+            //Clearing all the Values
+            ClearAll();
+        }
+
+      private void PopulateWindow(List<ResultItem> resultsList)
+        {
+            Control linkLabel;
+            Control label;
+            Control description;
+
+            String linklabelStr = "linkLabel";
+            String labelStr = "label";
+            String descriptionStr = "richTextBox";
+
+            Control groupBox;
+            String groupBoxStr = "groupBox";
+
+            tabControl1.Visible = true;
+            
+            for (int i = 1; i <= 20; i++)
+            {
+                linkLabel = this.Controls.Find(linklabelStr + i.ToString(), true)[0];
+                label = this.Controls.Find(labelStr + i.ToString(), true)[0];
+                description = this.Controls.Find(descriptionStr + i.ToString(), true)[0];
+                groupBox = this.Controls.Find(groupBoxStr + i.ToString(), true)[0];
+
+                //Clear Text
+                linkLabel.Text = resultsList[i].title;
+                linkLabel.ForeColor = System.Drawing.Color.Blue;
+                linkLabel.Font = new Font("Calibiri", 12);
+                label.Text = resultsList[i].link;
+                label.ForeColor = System.Drawing.Color.Blue;
+                description.Text = resultsList[i].description;
+                description.BackColor = System.Drawing.Color.White;
+
+                // Hide the control
+                linkLabel.Visible = true;
+                label.Visible = true;
+                description.Visible = true;
+                groupBox.Visible = true;
+
+            }
+
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            trackingActive = true;
+            string searchTerm = textBox1.Text;
+            //Load the files to the search
+            if (!String.IsNullOrEmpty(searchTerm)) // String is not Null
+            {
+                string basePath = @"..\..\Data\SearchData\";
+                JsonReader jsonObject = new JsonReader();
+
+                List<ResultItem> resultItems = jsonObject.LoadJson(basePath + searchTerm);
+
+                if (resultItems!= null)
+                {
+                    label21.Text = "Follwing Results Were Found";
+                    label21.ForeColor = System.Drawing.Color.Blue;
+                    tabControl1.Visible = true;
+                    Console.WriteLine("Results Found");
+                    PopulateWindow(resultItems);
+                }
+                else
+                {
+                    label21.Text = "No results Found, The Term is not added to the database yet";
+                    label21.ForeColor = System.Drawing.Color.Red;
+                    ClearAll();
+                    Console.WriteLine("We are still trying to imbed the search terms in the interface");
+                }
+            }
+        }
+
+        private void ClearAll()
+        {
+            //Control linkLabel;
+            //Control label;
+            //Control description;
+            //String linklabelStr = "linkLabel";
+            //String labelStr = "label";
+            //String descriptionStr = "richTextBox";
+
+            Control groupBox;
+            String groupBoxStr = "groupBox";
+
+            tabControl1.Visible = false;
+            textBox1.Clear();           
+
+            for (int i = 1; i <= 20; i++)
+            {
+               // linkLabel = this.Controls.Find(linklabelStr + i.ToString(), true)[0];
+               // label = this.Controls.Find(labelStr + i.ToString(), true)[0];
+               // description = this.Controls.Find(descriptionStr + i.ToString(), true)[0];
+                groupBox = this.Controls.Find(groupBoxStr + i.ToString(), true)[0];
+
+                //Clear Text
+               // linkLabel.Text = "";
+               // label.Text = "";
+               // description.Text = "";
+                
+
+                // Hide the control
+              //  linkLabel.Visible = false;
+              //  label.Visible = false;
+              //  description.Visible = false;
+                groupBox.Visible = false;
+            }
+        }
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+            trackingActive = false;
+            label21.Text = "";
+            ClearAll();
+        }
+    }
+}
